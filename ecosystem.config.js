@@ -1,4 +1,4 @@
-const { config } = require('dotenv');
+import { config } from 'dotenv';
 
 // Load environment variables
 config();
@@ -40,7 +40,7 @@ const bots = getBots();
 // Dynamically generate PM2 apps configuration
 const apps = bots.map(({ id, token }) => ({
   name: `music-bot-${id}`,
-  script: 'bot.js',
+  script: 'index.js',
   env: {
     BOT_TOKEN: token,
     BOT_ID: id.toString(),
@@ -56,6 +56,6 @@ const apps = bots.map(({ id, token }) => ({
   time: true
 }));
 
-module.exports = {
+export default {
   apps
 }; 

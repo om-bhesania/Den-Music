@@ -56,7 +56,7 @@ cp .env.example .env
 
 4. **Deploy slash commands**
 ```bash
-npm run deploy-commands
+npm run deploy
 ```
 
 5. **Start the bot**
@@ -75,8 +75,15 @@ npm start
 Create a `.env` file with:
 
 ```env
-# Discord Bot Tokens (comma-separated for multiple bots)
-BOT_TOKENS=your_token_1,your_token_2,your_token_3
+# Discord Bot Tokens (one per bot)
+BOT_TOKEN_1=your_token_1
+BOT_TOKEN_2=your_token_2
+BOT_TOKEN_3=your_token_3
+
+# Discord Bot Client IDs (required for command registration)
+BOT_CLIENT_ID_1=your_client_id_1
+BOT_CLIENT_ID_2=your_client_id_2
+BOT_CLIENT_ID_3=your_client_id_3
 
 # Server Configuration
 PORT=3000
@@ -86,9 +93,10 @@ NODE_ENV=production
 ### Multi-Bot Setup
 
 1. Create multiple Discord applications at https://discord.com/developers/applications
-2. Add all bot tokens to `BOT_TOKENS` (comma-separated)
-3. Invite all bots to your servers with the same permissions
-4. The system automatically manages bot assignment
+2. Add all bot tokens to environment variables (BOT_TOKEN_1, BOT_TOKEN_2, etc.)
+3. Add all client IDs to environment variables (BOT_CLIENT_ID_1, BOT_CLIENT_ID_2, etc.)
+4. Invite all bots to your servers with the same permissions
+5. The system automatically manages bot assignment
 
 ### Bot Permissions Required
 - `Connect` - Join voice channels
@@ -98,43 +106,7 @@ NODE_ENV=production
 - `Embed Links` - Rich embeds
 - `Read Message History` - Button interactions
 
-## 🎵 Commands
-
-### Music Commands
-- `/play <song/url>` - Play music from various sources
-- `/skip` - Skip current song
-- `/stop` - Stop playback and clear queue
-- `/pause` - Pause current song  
-- `/resume` - Resume paused song
-- `/volume [1-100]` - Adjust volume
-- `/queue` - Show current queue
-- `/nowplaying` - Show current song info
-- `/disconnect` - Leave voice channel
-- `/autoplay [on/off]` - Toggle auto-playlist
-
-### Utility Commands
-- `/help` - Show available commands
-
-## 🎛️ Interactive Controls
-
-Music embeds include buttons for:
-- 🔉/🔊 Volume down/up
-- ⏭️ Skip song
-- 📋 Show queue
-- ⏹️ Stop playback
-- 🔄 Toggle auto-play
-- 🔀 Shuffle queue
-- 🔁 Loop (coming soon)
-- 🚪 Disconnect
-
-## 🌐 Supported Sources
-
-- **YouTube**: Direct video URLs and searches
-- **YouTube Music**: Prioritized for music content  
-- **Spotify**: Automatically converts to YouTube
-- **Search queries**: "Artist - Song", "Song name", etc.
-
-## 📦 Deployment
+## 🚀 Deployment
 
 ### Render Deployment
 
@@ -142,127 +114,74 @@ Music embeds include buttons for:
 2. **Connect to Render**
    - Create new Web Service
    - Connect your GitHub repository
-   - Choose "den-music" folder if in monorepo
+   - Set build command: `npm install`
+   - Set start command: `node index.js`
 
-3. **Configure Build & Deploy**
-   ```
-   Build Command: npm install
-   Start Command: npm start
-   ```
-
-4. **Set Environment Variables**
-   - Add `BOT_TOKENS` with your comma-separated tokens
-   - Set `NODE_ENV=production`
-
-5. **Deploy**
-   - Render will automatically deploy and provide a URL
-   - Use the `/health` endpoint to monitor bot status
-
-### Resource Optimization
-- Designed for Render's 750 hour/month free tier
-- Efficient memory usage with stream-only approach
-- Auto-cleanup of completed songs
-- Health check endpoint for uptime monitoring
-
-## 🛠️ Development
-
-### Project Structure
-```
-den-music/
-├── commands/           # Slash command implementations
-├── config/            # Command configurations
-├── utils/             # Core utilities (bot manager, music player, etc.)
-├── scripts/           # Deployment and utility scripts
-├── data/              # JSON storage for settings
-└── index.js           # Main application entry point
-```
-
-### Scripts
-- `npm run dev` - Development with auto-reload
-- `npm run deploy-commands` - Deploy slash commands to Discord
-- `npm run generate-help` - Auto-generate help command from config
-
-### Adding New Commands
-
-1. **Add to config**
-```javascript
-// config/commands.js
-export const commands = {
-  newcommand: {
-    name: 'newcommand',
-    description: 'Description here',
-    aliases: ['alias1', 'alias2']
-  }
-};
-```
-
-2. **Create command file**
-```javascript
-// commands/newcommand.js
-export const newcommandCommand = {
-  data: { /* Discord API command data */ },
-  async execute(interaction, bot) {
-    // Implementation
-  }
-};
-```
-
-3. **Register in main index**
-```javascript
-// index.js
-import { newcommandCommand } from './commands/newcommand.js';
-commands.set('newcommand', newcommandCommand);
-```
+3. **Configure Environment Variables**
+   - Add all your bot tokens (BOT_TOKEN_1, BOT_TOKEN_2, etc.)
+   - Add all your client IDs (BOT_CLIENT_ID_1, BOT_CLIENT_ID_2, etc.)
+   - Set NODE_ENV=production
 
 4. **Deploy**
+   - Render will automatically deploy your bot
+   - The health check endpoint will be available at your domain
+
+### Local Development
+
 ```bash
-npm run deploy-commands
+# Install dependencies
+npm install
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your bot tokens
+
+# Deploy commands
+npm run deploy
+
+# Start development server
+npm run dev
 ```
 
-## 🐛 Troubleshooting
+## 📁 Project Structure
 
-### Common Issues
+```
+den-music/
+├── index.js              # Main application entry point
+├── deploy-commands.js    # Command deployment script
+├── commands/             # Slash command implementations
+├── utils/                # Utility modules
+│   ├── disTubePlayer.js  # Music player implementation
+│   ├── botCoordinator.js # Multi-bot coordination
+│   ├── embedBuilder.js   # Rich embed creation
+│   └── botManager.js     # Bot management utilities
+├── config/               # Configuration files
+└── data/                 # Persistent data storage
+```
 
-**Bot not responding to commands**
-- Ensure bot has proper permissions
-- Check if slash commands are deployed
-- Verify bot token is correct
+## 🎵 Commands
 
-**Audio not playing**
-- Confirm bot can connect to voice channel
-- Check voice channel permissions
-- Verify ffmpeg installation
-
-**"All bots busy" message**
-- Add more bot tokens to handle concurrent usage
-- Check if bots are stuck in voice channels
-
-**Memory issues on Render**
-- Monitor `/health` endpoint
-- Reduce auto-playlist queue size if needed
-- Ensure proper cleanup is happening
-
-### Debug Mode
-Set `DEBUG=true` in environment for verbose logging.
-
-## 📄 License
-
-MIT License - see LICENSE file for details.
+- `/play <song>` - Play a song or add to queue
+- `/skip` - Skip current song
+- `/stop` - Stop playback and clear queue
+- `/pause` - Pause playback
+- `/resume` - Resume playback
+- `/volume <level>` - Set volume (0-100)
+- `/queue` - Show current queue
+- `/nowplaying` - Show current song info
+- `/disconnect` - Disconnect from voice channel
+- `/autoplay` - Toggle autoplay mode
+- `/stats` - Show bot statistics
+- `/help` - Show help information
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)  
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-## 🆘 Support
+## 📄 License
 
-- Create issues for bugs or feature requests
-- Join our Discord server (link in repository)
-- Check the troubleshooting section above
-
----
-
-**Den Music** - Bringing quality music streaming to Discord with zero cost! 🎵
+MIT License - see LICENSE file for details

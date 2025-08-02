@@ -4,17 +4,23 @@ services:
     env: node
     plan: free
     buildCommand: npm install
-    startCommand: npm start
-    healthCheckPath: /health
+    startCommand: node index.js
+    healthCheckPath: /
     envVars:
       - key: NODE_ENV
         value: production
-      - key: BOT_TOKENS
-        sync: false  # This should be set manually in Render dashboard
       - key: PORT
-        value: 3000
+        value: "3000"
+      # Bot tokens should be set manually in Render dashboard
+      # Format: BOT_TOKEN_1, BOT_TOKEN_2, etc.
+      # Format: BOT_CLIENT_ID_1, BOT_CLIENT_ID_2, etc.
     autoDeploy: true
     branch: main
     scaling:
       minInstances: 1
       maxInstances: 1
+    healthCheck:
+      httpPath: /
+      port: 3000
+      initialDelaySeconds: 30
+      periodSeconds: 60
