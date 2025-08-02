@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: den-music-bot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BOT_TOKENS
+        sync: false  # This should be set manually in Render dashboard
+      - key: PORT
+        value: 3000
+    autoDeploy: true
+    branch: main
+    scaling:
+      minInstances: 1
+      maxInstances: 1
