@@ -154,10 +154,19 @@ class MusicBot {
             flags: 64,
           };
 
-          if (interaction.replied || interaction.deferred) {
-            await interaction.followUp(errorMessage);
-          } else {
-            await interaction.reply(errorMessage);
+          try {
+            if (interaction.replied || interaction.deferred) {
+              await interaction.followUp(errorMessage);
+            } else {
+              await interaction.reply(errorMessage);
+            }
+          } catch (followUpError) {
+            // Handle Discord API errors like Unknown Message (10008)
+            if (followUpError.code === 10008) {
+              console.log(`⚠️ Interaction message not found, skipping error response for Bot ${this.botId}`);
+            } else {
+              console.error(`❌ Failed to send error response for Bot ${this.botId}:`, followUpError);
+            }
           }
         }
       } else if (interaction.isButton()) {
@@ -180,16 +189,25 @@ class MusicBot {
           }
         } catch (error) {
           console.error(`Button interaction error on Bot ${this.botId}:`, error);
-          await interaction.reply({
-            embeds: [
-              {
-                color: 0xff0000,
-                title: "❌ Error",
-                description: "An error occurred while processing the button.",
-              },
-            ],
-            flags: 64,
-          });
+          try {
+            await interaction.reply({
+              embeds: [
+                {
+                  color: 0xff0000,
+                  title: "❌ Error",
+                  description: "An error occurred while processing the button.",
+                },
+              ],
+              flags: 64,
+            });
+          } catch (replyError) {
+            // Handle Discord API errors like Unknown Message (10008)
+            if (replyError.code === 10008) {
+              console.log(`⚠️ Button interaction message not found, skipping error response for Bot ${this.botId}`);
+            } else {
+              console.error(`❌ Failed to send button error response for Bot ${this.botId}:`, replyError);
+            }
+          }
         }
       }
     });
@@ -247,6 +265,31 @@ class MusicBot {
     // Error handling
     this.client.on("error", (error) => {
       console.error(`❌ Bot ${this.botId} error:`, error);
+      
+      // Handle specific Discord API errors
+      if (error.code === 10008) {
+        console.log(`⚠️ Bot ${this.botId}: Unknown Message error - interaction may have expired`);
+      } else if (error.code === 10062) {
+        console.log(`⚠️ Bot ${this.botId}: Unknown Interaction error - interaction may have expired`);
+      } else if (error.code === 50001) {
+        console.log(`⚠️ Bot ${this.botId}: Missing Access error - bot may not have required permissions`);
+      } else {
+        console.error(`❌ Bot ${this.botId} unhandled error:`, error);
+      }
+    });
+
+    // Handle unhandled promise rejections
+    this.client.on("unhandledRejection", (reason, promise) => {
+      console.error(`❌ Bot ${this.botId} unhandled promise rejection:`, reason);
+      
+      // Handle Discord API errors in promise rejections
+      if (reason && reason.code) {
+        if (reason.code === 10008) {
+          console.log(`⚠️ Bot ${this.botId}: Unknown Message in promise rejection - interaction may have expired`);
+        } else if (reason.code === 10062) {
+          console.log(`⚠️ Bot ${this.botId}: Unknown Interaction in promise rejection - interaction may have expired`);
+        }
+      }
     });
 
     this.client.on("disconnect", () => {

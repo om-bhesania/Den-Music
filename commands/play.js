@@ -135,10 +135,19 @@ export default {
         description: error.message || "Failed to play the requested song",
       };
 
-      if (interaction.deferred) {
-        await interaction.editReply({ embeds: [errorEmbed] });
-      } else {
-        await interaction.reply({ embeds: [errorEmbed], flags: 64 });
+      try {
+        if (interaction.deferred) {
+          await interaction.editReply({ embeds: [errorEmbed] });
+        } else {
+          await interaction.reply({ embeds: [errorEmbed], flags: 64 });
+        }
+      } catch (replyError) {
+        // Handle Discord API errors like Unknown Message (10008)
+        if (replyError.code === 10008) {
+          console.log(`⚠️ Play command interaction message not found, skipping error response`);
+        } else {
+          console.error(`❌ Failed to send play command error response:`, replyError);
+        }
       }
     }
   }

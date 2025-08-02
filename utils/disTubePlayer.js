@@ -15,10 +15,35 @@ class DisTubePlayer {
       emitAddListWhenCreatingQueue: false,
       nsfw: true,
       joinNewVoiceChannel: true,
+      leaveOnStop: false,
+      leaveOnFinish: false,
+      leaveOnEmpty: false,
       plugins: [
         new SpotifyPlugin(),
         new SoundCloudPlugin(),
-        new YtDlpPlugin()
+        new YtDlpPlugin({
+          update: false,
+          quality: 'highestaudio',
+          format: 'bestaudio/best',
+          requestOptions: {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-us,en;q=0.5',
+              'Sec-Fetch-Mode': 'navigate'
+            }
+          },
+          ytdlpOptions: {
+            format: 'bestaudio/best',
+            noCheckCertificates: true,
+            noWarnings: true,
+            preferFreeFormats: true,
+            addHeader: [
+              'referer:youtube.com',
+              'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ]
+          }
+        })
       ]
     });
 
@@ -210,6 +235,7 @@ class DisTubePlayer {
     // Play song event
     this.distube.on('playSong', (queue, song) => {
       console.log(`🎵 Bot ${this.distube.client.user.username}: Now playing: ${song.name} - ${song.uploader.name}`);
+      console.log(`📊 Song details: Duration=${song.duration}s, URL=${song.url}, Source=${song.source}`);
       
       // Enable autoplay if multiple songs in queue
       if (queue.songs.length > 1 && !queue.autoplay) {
@@ -238,6 +264,16 @@ class DisTubePlayer {
           components: embedBuilder.createControlButtons(queue)
         }).catch(console.error);
       }
+    });
+
+    // Add song event
+    this.distube.on('addSong', (queue, song) => {
+      console.log(`➕ Bot ${this.distube.client.user.username}: Added song to queue: ${song.name}`);
+    });
+
+    // Add list event
+    this.distube.on('addList', (queue, playlist) => {
+      console.log(`📋 Bot ${this.distube.client.user.username}: Added playlist to queue: ${playlist.name} (${playlist.songs.length} songs)`);
     });
 
     // Song finished event
@@ -276,18 +312,44 @@ class DisTubePlayer {
       }
     });
 
+    // DisTube ready event
+    this.distube.on('ready', (queue) => {
+      console.log(`🎧 Bot ${this.distube.client.user.username}: DisTube ready, queue created`);
+    });
+
+    // DisTube disconnect event
+    this.distube.on('disconnect', (queue) => {
+      console.log(`🔌 Bot ${this.distube.client.user.username}: DisTube disconnected from voice channel`);
+    });
+
     // Error event
     this.distube.on('error', (channel, error) => {
       console.error(`❌ Bot ${this.distube.client.user.username} DisTube error:`, error);
+      
+      // Handle specific YouTube content errors
+      let errorMessage = 'Playback error occurred';
+      if (error.errorCode === 'YTDLP_ERROR') {
+        if (error.message.includes("This content isn't available")) {
+          errorMessage = 'This video is not available or has been removed from YouTube.';
+        } else if (error.message.includes("Video unavailable")) {
+          errorMessage = 'This video is unavailable or private.';
+        } else if (error.message.includes("Sign in")) {
+          errorMessage = 'This video requires sign-in to view.';
+        } else {
+          errorMessage = 'Unable to play this YouTube video. Please try a different link.';
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       
       // Get the text channel from queue if available
       const textChannel = channel?.textChannel || channel;
       
       if (textChannel?.isTextBased?.()) {
         textChannel.send({
-          embeds: [embedBuilder.createErrorEmbed(`❌ Playback error: ${error.message}`)]
-        }).catch(error => {
-          console.error('Failed to send error message:', error);
+          embeds: [embedBuilder.createErrorEmbed(`❌ ${errorMessage}`)]
+        }).catch(sendError => {
+          console.error('Failed to send error message:', sendError);
         });
       }
     });
@@ -343,17 +405,85 @@ class DisTubePlayer {
   }
 
   formatDuration(seconds) {
-    if (!seconds) return 'Unknown';
-    
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     
     if (hours > 0) {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     } else {
       return `${minutes}:${secs.toString().padStart(2, '0')}`;
     }
+  }
+
+  // YouTube URL parser to handle different formats
+  parseYouTubeUrl(url) {
+    try {
+      // Handle youtu.be links
+      if (url.includes('youtu.be/')) {
+        const videoId = url.split('youtu.be/')[1].split('?')[0];
+        return `https://www.youtube.com/watch?v=${videoId}`;
+      }
+      
+      // Handle youtube.com/watch links
+      if (url.includes('youtube.com/watch')) {
+        const urlObj = new URL(url);
+        const videoId = urlObj.searchParams.get('v');
+        if (videoId) {
+          return `https://www.youtube.com/watch?v=${videoId}`;
+        }
+      }
+      
+      // Handle youtube.com/embed links
+      if (url.includes('youtube.com/embed/')) {
+        const videoId = url.split('youtube.com/embed/')[1].split('?')[0];
+        return `https://www.youtube.com/watch?v=${videoId}`;
+      }
+      
+      // Handle youtube.com/v links
+      if (url.includes('youtube.com/v/')) {
+        const videoId = url.split('youtube.com/v/')[1].split('?')[0];
+        return `https://www.youtube.com/watch?v=${videoId}`;
+      }
+      
+      return url; // Return original if no pattern matches
+    } catch (error) {
+      console.error('Error parsing YouTube URL:', error);
+      return url; // Return original on error
+    }
+  }
+
+  // Validate YouTube URL format
+  isValidYouTubeUrl(url) {
+    try {
+      const patterns = [
+        /^https?:\/\/(www\.)?youtube\.com\/watch\?v=[a-zA-Z0-9_-]+/,
+        /^https?:\/\/youtu\.be\/[a-zA-Z0-9_-]+/,
+        /^https?:\/\/(www\.)?youtube\.com\/embed\/[a-zA-Z0-9_-]+/,
+        /^https?:\/\/(www\.)?youtube\.com\/v\/[a-zA-Z0-9_-]+/
+      ];
+      
+      return patterns.some(pattern => pattern.test(url));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Process query for better search results
+  processQuery(query) {
+    // If it's a valid URL, return as is
+    if (this.isValidYouTubeUrl(query)) {
+      return this.parseYouTubeUrl(query);
+    }
+    
+    // If it looks like a URL but not valid YouTube, try to search
+    if (query.includes('http') || query.includes('www.')) {
+      console.log('🔍 Non-YouTube URL detected, treating as search query');
+      return query; // Let DisTube handle it
+    }
+    
+    // For text queries, ensure they're properly formatted for search
+    return query.trim();
   }
 
   async play(interaction, query, skipDefer = false) {
@@ -420,6 +550,23 @@ class DisTubePlayer {
       // Only defer if not already deferred and skipDefer is false
       if (!skipDefer && !interaction.deferred && !interaction.replied) {
         await interaction.deferReply();
+        
+        // Set a timeout to handle interaction expiration
+        setTimeout(async () => {
+          try {
+            if (!interaction.replied && interaction.deferred) {
+              await interaction.editReply({
+                embeds: [
+                  embedBuilder.createErrorEmbed("⏰ Request timed out. Please try the command again.")
+                ]
+              });
+            }
+          } catch (error) {
+            if (error.code === 10008) {
+              console.log(`⚠️ Interaction expired, skipping timeout response`);
+            }
+          }
+        }, 15000); // 15 seconds timeout
       }
 
       // First ensure we can join the voice channel
@@ -445,9 +592,14 @@ class DisTubePlayer {
       // Play the song using this bot's DisTube instance
       try {
         console.log(`🎵 Attempting to play in channel ${voiceChannel.name} (${voiceChannel.id})`);
+        console.log(`🔍 Original query: ${query}`);
+
+        // Process the query for better handling
+        const processedQuery = this.processQuery(query);
+        console.log(`🔧 Processed query: ${processedQuery}`);
 
         // Try to play the song
-        const result = await this.distube.play(voiceChannel, query, {
+        const result = await this.distube.play(voiceChannel, processedQuery, {
           member: member,
           textChannel: interaction.channel,
           metadata: interaction
@@ -471,79 +623,173 @@ class DisTubePlayer {
         await this.handlePlayResult(interaction, result, query);
       } catch (error) {
         console.error('Play execution error:', error);
-        if (interaction.deferred) {
-          await interaction.editReply({
-            embeds: [embedBuilder.createErrorEmbed(`❌ Failed to play: ${error.message}`)]
-          });
-        } else {
-          await interaction.reply({
-            embeds: [embedBuilder.createErrorEmbed(`❌ Failed to play: ${error.message}`)],
-            flags: 64
-          });
+        
+        // Handle specific YouTube content errors with retry logic
+        let errorMessage = 'Failed to play the requested song';
+        let shouldRetry = false;
+        let retryAttempts = 0;
+        const maxRetries = 2;
+        
+        if (error.errorCode === 'YTDLP_ERROR') {
+          if (error.message.includes("This content isn't available")) {
+            errorMessage = 'This video is not available or has been removed from YouTube.';
+          } else if (error.message.includes("Video unavailable")) {
+            errorMessage = 'This video is unavailable or private.';
+          } else if (error.message.includes("Sign in")) {
+            errorMessage = 'This video requires sign-in to view.';
+          } else if (error.message.includes("format") || error.message.includes("quality")) {
+            errorMessage = 'Unable to play this YouTube video due to format issues.';
+            shouldRetry = true;
+          } else {
+            errorMessage = 'Unable to play this YouTube video. Please try a different link.';
+            shouldRetry = true;
+          }
+        } else if (error.message) {
+          errorMessage = error.message;
+          // Try to retry for general errors that might be format-related
+          shouldRetry = error.message.includes("format") || error.message.includes("quality") || error.message.includes("extract");
+        }
+        
+        // If we should retry, try with different options
+        if (shouldRetry && !interaction.replied && retryAttempts < maxRetries) {
+          while (retryAttempts < maxRetries) {
+            try {
+              retryAttempts++;
+              console.log(`🔄 Retry attempt ${retryAttempts}/${maxRetries} with different format...`);
+              
+              const retryResult = await this.distube.play(voiceChannel, processedQuery, {
+                member: member,
+                textChannel: interaction.channel,
+                metadata: interaction,
+                position: 0
+              });
+              
+              const queue = this.distube.getQueue(interaction.guildId);
+              if (queue) {
+                await this.handlePlayResult(interaction, retryResult, query);
+                return; // Success, don't show error
+              }
+            } catch (retryError) {
+              console.error(`Retry attempt ${retryAttempts} failed:`, retryError);
+              if (retryAttempts >= maxRetries) {
+                break; // Stop retrying
+              }
+            }
+          }
+        }
+        
+        try {
+          if (interaction.deferred) {
+            await interaction.editReply({
+              embeds: [embedBuilder.createErrorEmbed(`❌ ${errorMessage}`)]
+            });
+          } else {
+            await interaction.reply({
+              embeds: [embedBuilder.createErrorEmbed(`❌ ${errorMessage}`)],
+              flags: 64
+            });
+          }
+        } catch (replyError) {
+          // Handle Discord API errors like Unknown Message (10008)
+          if (replyError.code === 10008) {
+            console.log(`⚠️ Play execution interaction message not found, skipping error response`);
+          } else {
+            console.error(`❌ Failed to send play execution error response:`, replyError);
+          }
         }
       }
 
     } catch (error) {
       console.error('DisTube play error:', error);
       
-      const errorMessage = error.message || 'Failed to play the requested song';
+      // Handle specific YouTube content errors
+      let errorMessage = 'Failed to play the requested song';
+      if (error.errorCode === 'YTDLP_ERROR') {
+        if (error.message.includes("This content isn't available")) {
+          errorMessage = 'This video is not available or has been removed from YouTube.';
+        } else if (error.message.includes("Video unavailable")) {
+          errorMessage = 'This video is unavailable or private.';
+        } else {
+          errorMessage = 'Unable to play this YouTube video. Please try a different link.';
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       
-      // Check if interaction is already deferred
-      if (interaction.deferred) {
-        await interaction.editReply({
-          embeds: [
-            embedBuilder.createErrorEmbed(`❌ ${errorMessage}`)
-          ]
-        });
-      } else {
-        await interaction.reply({
-          embeds: [
-            embedBuilder.createErrorEmbed(`❌ ${errorMessage}`)
-          ],
-          flags: 64
-        });
+      try {
+        // Check if interaction is already deferred
+        if (interaction.deferred) {
+          await interaction.editReply({
+            embeds: [
+              embedBuilder.createErrorEmbed(`❌ ${errorMessage}`)
+            ]
+          });
+        } else {
+          await interaction.reply({
+            embeds: [
+              embedBuilder.createErrorEmbed(`❌ ${errorMessage}`)
+            ],
+            flags: 64
+          });
+        }
+      } catch (replyError) {
+        // Handle Discord API errors like Unknown Message (10008)
+        if (replyError.code === 10008) {
+          console.log(`⚠️ DisTube play interaction message not found, skipping error response`);
+        } else {
+          console.error(`❌ Failed to send DisTube play error response:`, replyError);
+        }
       }
     }
   }
 
   async handlePlayResult(interaction, result, query) {
-    // Check if it's a playlist
-    if (result && result.songs && result.songs.length > 1) {
-      await interaction.editReply({
-        embeds: [
-          embedBuilder.createSuccessEmbed(
-            `🎵 Added playlist **${result.songs.length} songs** to the queue!`
-          )
-        ]
-      });
-    } else if (result && result.songs && result.songs.length === 1) {
-      await interaction.editReply({
-        embeds: [
-          embedBuilder.createSuccessEmbed(
-            `🎵 Now playing **${result.songs[0].name}**!`
-          )
-        ]
-      });
-    } else {
-      // If no result but no error was thrown, the song might still be playing
-      // Let's check if there's a queue
-      const queue = this.distube.getQueue(interaction.guildId);
-      if (queue && queue.songs.length > 0) {
+    try {
+      // Check if it's a playlist
+      if (result && result.songs && result.songs.length > 1) {
         await interaction.editReply({
           embeds: [
             embedBuilder.createSuccessEmbed(
-              `🎵 Added **${query}** to the queue!`
+              `🎵 Added playlist **${result.songs.length} songs** to the queue!`
+            )
+          ]
+        });
+      } else if (result && result.songs && result.songs.length === 1) {
+        await interaction.editReply({
+          embeds: [
+            embedBuilder.createSuccessEmbed(
+              `🎵 Now playing **${result.songs[0].name}**!`
             )
           ]
         });
       } else {
-        await interaction.editReply({
-          embeds: [
-            embedBuilder.createErrorEmbed(
-              "❌ Failed to play the requested song. Please try again."
-            )
-          ]
-        });
+        // If no result but no error was thrown, the song might still be playing
+        // Let's check if there's a queue
+        const queue = this.distube.getQueue(interaction.guildId);
+        if (queue && queue.songs.length > 0) {
+          await interaction.editReply({
+            embeds: [
+              embedBuilder.createSuccessEmbed(
+                `🎵 Added **${query}** to the queue!`
+              )
+            ]
+          });
+        } else {
+          await interaction.editReply({
+            embeds: [
+              embedBuilder.createErrorEmbed(
+                "❌ Failed to play the requested song. Please try again."
+              )
+            ]
+          });
+        }
+      }
+    } catch (error) {
+      // Handle Discord API errors like Unknown Message (10008)
+      if (error.code === 10008) {
+        console.log(`⚠️ HandlePlayResult interaction message not found, skipping response`);
+      } else {
+        console.error(`❌ Failed to send play result response:`, error);
       }
     }
   }
