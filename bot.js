@@ -1,8 +1,6 @@
 import { Client, GatewayIntentBits, Collection } from "discord.js";
 import { config } from "dotenv";
-import express from "express";
 import DisTubePlayer from "./utils/disTubePlayer.js";
-import botCoordinator from "./utils/botCoordinator.js";
 
 // Import all commands
 import playCommand from "./commands/play.js";
@@ -21,65 +19,18 @@ import statsCommand from "./commands/stats.js";
 // Load environment variables
 config();
 
-// Express server for health checks
-const app = express();
-const PORT = process.env.PORT || 3002;
-
-app.get("/", (req, res) => {
-  res.send("🎵 Den Music Bots are running!");
-});
-
-app.listen(PORT, () => {
-  console.log(`🌐 Health check server running on port ${PORT}`);
-});
-
-// Dynamic bot token detection - supports unlimited bots
-const getBotTokens = () => {
-  const tokens = [];
-  let botIndex = 1;
-  
-  // Dynamically find all bot tokens (supports unlimited bots)
-  while (true) {
-    const token = process.env[`BOT_TOKEN_${botIndex}`];
-    const clientId = process.env[`BOT_CLIENT_ID_${botIndex}`];
-    
-    if (!token || !clientId) {
-      break; // Stop when we don't find a token or client ID
-    }
-    
-    tokens.push({ 
-      id: botIndex, 
-      token, 
-      clientId 
-    });
-    botIndex++;
-  }
-  
-  if (tokens.length === 0) {
-    console.error("❌ No bot tokens found in environment variables");
-    console.error("Please set BOT_TOKEN_1, BOT_TOKEN_2, etc. and BOT_CLIENT_ID_1, BOT_CLIENT_ID_2, etc. in your .env file");
-    console.error("Example:");
-    console.error("BOT_TOKEN_1=your_token_1");
-    console.error("BOT_CLIENT_ID_1=your_client_id_1");
-    console.error("BOT_TOKEN_2=your_token_2");
-    console.error("BOT_CLIENT_ID_2=your_client_id_2");
-    process.exit(1);
-  }
-  
-  console.log(`🔍 Found ${tokens.length} bot(s) in environment variables`);
-  tokens.forEach(({ id, token, clientId }) => {
-    console.log(`   Bot ${id}: Token ${token.substring(0, 10)}..., Client ID: ${clientId}`);
-  });
-  
-  return tokens;
-};
-
-// Bot class for individual bot instances
 class MusicBot {
-  constructor(token, botId) {
-    this.token = token;
-    this.botId = botId;
+  constructor() {
+    // Get bot token from environment (set by process manager)
+    this.token = process.env.BOT_TOKEN;
+    this.botId = process.env.BOT_ID || '1';
     
+    if (!this.token) {
+      console.error("❌ BOT_TOKEN environment variable is required");
+      process.exit(1);
+    }
+
+    // Create Discord client
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -89,10 +40,10 @@ class MusicBot {
       ],
     });
 
-    // Initialize DisTube player for this bot
+    // Initialize DisTube player
     this.client.distubePlayer = new DisTubePlayer(this.client);
 
-    // Command collection for this bot
+    // Command collection
     this.client.commands = new Collection();
 
     // Add commands to collection
@@ -118,9 +69,6 @@ class MusicBot {
       console.log(`🎵 Bot ${this.botId}: ${this.client.user.tag} is ready!`);
       console.log(`🎧 DisTube music player initialized for Bot ${this.botId}`);
       console.log(`🆔 Bot ID: ${this.botId}, Token: ${this.token.substring(0, 10)}...`);
-      
-      // Register this bot with the coordinator
-      botCoordinator.registerBot(this.botId, this.client);
     });
 
     // Interaction handler
@@ -136,7 +84,7 @@ class MusicBot {
         try {
           // Handle the command with this bot
           console.log(`🎵 Bot ${this.botId} (${this.client.user.username}) handling command: ${interaction.commandName}`);
-          await command.execute(interaction, this.botId);
+          await command.execute(interaction, this.client);
         } catch (error) {
           console.error(
             `❌ Error executing command ${interaction.commandName} on Bot ${this.botId}:`,
@@ -194,21 +142,17 @@ class MusicBot {
       }
     });
 
-    // Voice state updates for auto-leave functionality and coordinator updates
+    // Voice state updates for auto-leave functionality
     this.client.on("voiceStateUpdate", async (oldState, newState) => {
       // Check if this bot left a voice channel
       if (oldState.member.id === this.client.user.id && !newState.channelId) {
         console.log(`🔌 Bot ${this.botId} left voice channel ${oldState.channelId}`);
-        // Update coordinator - bot is now available
-        botCoordinator.updateBotState(this.botId, null);
         return;
       }
 
       // Check if this bot joined a voice channel
       if (oldState.member.id === this.client.user.id && !oldState.channelId && newState.channelId) {
         console.log(`🎵 Bot ${this.botId} joined voice channel ${newState.channelId}`);
-        // Update coordinator - bot is now in this voice channel
-        botCoordinator.updateBotState(this.botId, newState.channelId);
       }
 
       // Check if this bot is in a voice channel
@@ -236,8 +180,6 @@ class MusicBot {
                   queue.stop();
                 }
               }
-              // Update coordinator - bot is now available
-              botCoordinator.updateBotState(this.botId, null);
             }
           }
         }, 60000); // 1 minute
@@ -270,57 +212,6 @@ class MusicBot {
   }
 }
 
-// Multi-bot manager for the new process-based approach
-class MultiBotManager {
-  constructor() {
-    this.bots = new Map();
-    this.tokens = getBotTokens();
-  }
-
-  async initializeBots() {
-    console.log(`🤖 Initializing ${this.tokens.length} independent bot(s)...`);
-    
-    const botPromises = this.tokens.map(({ id, token }) => {
-      const bot = new MusicBot(token, id);
-      this.bots.set(id, bot);
-      return bot.start();
-    });
-
-    try {
-      await Promise.all(botPromises);
-      console.log(`✅ All ${this.tokens.length} independent bots started successfully!`);
-      console.log(`🎯 Independent bot system ready! Each token acts as a separate bot.`);
-      console.log(`📊 System Status: ${this.tokens.length} bots online and ready`);
-      
-      // Log coordinator state after all bots are ready
-      setTimeout(() => {
-        botCoordinator.logState();
-      }, 2000);
-    } catch (error) {
-      console.error("❌ Failed to start bots:", error);
-      process.exit(1);
-    }
-  }
-
-  getBotStatus() {
-    const status = {
-      totalBots: this.tokens.length,
-      activeBots: this.bots.size,
-      bots: []
-    };
-
-    this.bots.forEach((bot, id) => {
-      status.bots.push({
-        id,
-        username: bot.client.user?.username || 'Unknown',
-        status: bot.client.ws?.status || 'offline'
-      });
-    });
-
-    return status;
-  }
-}
-
-// Start the multi-bot system
-const botManager = new MultiBotManager();
-botManager.initializeBots().catch(console.error);
+// Start the bot
+const bot = new MusicBot();
+bot.start().catch(console.error); 

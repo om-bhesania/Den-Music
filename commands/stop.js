@@ -1,13 +1,54 @@
 import { SlashCommandBuilder } from "discord.js";
+import botCoordinator from "../utils/botCoordinator.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("stop")
     .setDescription("Stop playing and clear the queue"),
 
-  async execute(interaction, client) {
+  async execute(interaction, botId) {
     try {
-      const distubePlayer = client.distubePlayer;
+      const member = interaction.member;
+      const voiceChannel = member?.voice?.channel;
+      const currentBotId = botId;
+
+      if (!voiceChannel) {
+        return interaction.reply({
+          embeds: [
+            {
+              color: 0xff0000,
+              title: "❌ Error",
+              description: "You need to be in a voice channel to use this command!",
+            },
+          ],
+          flags: 64,
+        });
+      }
+
+      // Check if this bot should handle this command
+      const shouldHandle = botCoordinator.shouldBotHandleCommand(currentBotId, voiceChannel.id);
+      
+      if (!shouldHandle) {
+        // Find the best bot for this voice channel
+        const bestBotId = botCoordinator.findBestBotForVoiceChannel(voiceChannel.id);
+        
+        if (bestBotId && bestBotId !== currentBotId) {
+          console.log(`🚫 Bot ${currentBotId} (${interaction.client.user.username}) cannot handle stop command - Bot ${bestBotId} should handle voice channel ${voiceChannel.id}`);
+          
+          return interaction.reply({
+            embeds: [
+              {
+                color: 0xff6b35,
+                title: "🔄 Bot Coordination",
+                description: `Please use the bot that's currently playing music in this voice channel.`,
+              },
+            ],
+            flags: 64,
+          });
+        }
+      }
+
+      const distubePlayer = interaction.client.distubePlayer;
       
       if (!distubePlayer) {
         return interaction.reply({
@@ -21,6 +62,8 @@ export default {
           flags: 64,
         });
       }
+
+      console.log(`🎵 Bot ${currentBotId} (${interaction.client.user.username}) handling stop command for voice channel ${voiceChannel.id}`);
 
       await distubePlayer.stop(interaction);
       

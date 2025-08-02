@@ -30,7 +30,7 @@ console.log("=====================================\n");
 async function install() {
   try {
     // Create necessary directories
-    const directories = ["data", "commands", "config", "utils", "scripts"];
+    const directories = ["data", "commands", "config", "utils", "scripts", "logs"];
     directories.forEach((dir) => {
       if (!existsSync(`./${dir}`)) {
         mkdirSync(`./${dir}`, { recursive: true });
@@ -53,6 +53,10 @@ async function install() {
       "yt-search@^2.13.1",
       "ffmpeg-static@^5.2.0",
       "sodium-native@^4.0.5",
+      "distube@^4.1.1",
+      "@distube/spotify@^1.5.1",
+      "@distube/soundcloud@^1.3.3",
+      "@distube/yt-dlp@^1.1.4",
     ];
 
     const devDependencies = ["nodemon@^3.0.2"];
@@ -70,14 +74,34 @@ async function install() {
     if (!existsSync("./.env")) {
       console.log("\n📝 Setting up environment variables...");
 
-      const tokens = await question(
-        "Enter your Discord bot tokens (comma-separated): "
-      );
-      const port =
-        (await question("Enter port number (default: 3000): ")) || "3000";
+      const numBots = parseInt(await question("How many bots do you want to configure? (default: 2): ")) || 2;
+      
+      let envContent = `# Discord Bot Configuration (Process-Based Multi-Bot)
+# Add your Discord bot tokens here (one per bot)
+# Format: BOT_TOKEN_1=token1, BOT_TOKEN_2=token2, etc.\n`;
 
-      const envContent = `# Discord Bot Tokens (comma-separated)
-BOT_TOKENS=${tokens}
+      // Add bot tokens
+      for (let i = 1; i <= numBots; i++) {
+        const token = await question(`Enter bot ${i} token: `);
+        envContent += `BOT_TOKEN_${i}=${token}\n`;
+      }
+
+      envContent += `\n# Discord Bot Client IDs (required for command registration)
+# Add your Discord bot client IDs here (one per bot)
+# Format: BOT_CLIENT_ID_1=clientid1, BOT_CLIENT_ID_2=clientid2, etc.\n`;
+
+      // Add client IDs
+      for (let i = 1; i <= numBots; i++) {
+        const clientId = await question(`Enter bot ${i} client ID: `);
+        envContent += `BOT_CLIENT_ID_${i}=${clientId}\n`;
+      }
+
+      const testGuildId = await question("Enter test guild ID (optional, for faster command updates): ");
+      const port = (await question("Enter port number (default: 3002): ")) || "3002";
+
+      envContent += `\n# Optional: Test Guild ID for faster command updates during development
+# Leave empty for global command registration
+TEST_GUILD_ID=${testGuildId || ''}
 
 # Server Configuration
 PORT=${port}
@@ -101,9 +125,9 @@ DEBUG=false`;
     try {
       // Test imports
       const testCode = `
-        import YouTube from 'youtube-sr';
-        import YTMusic from 'ytmusic-api';
         import { Client } from 'discord.js';
+        import DisTube from 'distube';
+        import { config } from 'dotenv';
         console.log('✅ All packages imported successfully');
       `;
       writeFileSync("./test-install.mjs", testCode);
@@ -117,11 +141,21 @@ DEBUG=false`;
 
     console.log("\n🎉 Installation completed successfully!");
     console.log("\n📋 Next steps:");
-    console.log("1. Deploy commands: npm run deploy-commands");
-    console.log("2. Start the bot: npm run dev");
+    console.log("1. Run: node registerCommands.js");
+    console.log("2. Invite all bots to your server");
+    console.log("3. Run: node index.js");
+    console.log("\n🎯 Features:");
+    console.log("   ✅ Dynamic bot detection (unlimited bots)");
+    console.log("   ✅ Bot coordinator system");
+    console.log("   ✅ Intelligent command routing");
+    console.log("   ✅ Automatic bot selection");
+    console.log("   ✅ Real-time voice channel coordination");
+    console.log("\n📖 For detailed setup instructions, see PROCESS_BASED_SETUP.md");
   } catch (error) {
     console.error("❌ Installation failed:", error.message);
     process.exit(1);
+  } finally {
+    rl.close();
   }
 }
 

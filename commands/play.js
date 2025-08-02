@@ -1,5 +1,6 @@
 import { SlashCommandBuilder } from "discord.js";
 import DisTubePlayer from "../utils/disTubePlayer.js";
+import botCoordinator from "../utils/botCoordinator.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -12,12 +13,12 @@ export default {
         .setRequired(true)
     ),
 
-  async execute(interaction, client) {
+  async execute(interaction, botId) {
     try {
       const member = interaction.member;
       const voiceChannel = member?.voice?.channel;
       const guildId = interaction.guildId;
-      const voiceChannelId = voiceChannel?.id;
+      const currentBotId = botId;
 
       if (!voiceChannel) {
         return interaction.reply({
@@ -32,45 +33,75 @@ export default {
         });
       }
 
-      // Get the bot manager to track voice channel usage
-      const botManager = client.botManager;
-      const currentBotIndex = client.botIndex || 0;
+      // Check if this bot should handle this command
+      const shouldHandle = botCoordinator.shouldBotHandleCommand(currentBotId, voiceChannel.id);
       
-      if (botManager) {
-        // Check if this bot is already in a different voice channel
-        const currentBotVoiceChannels = [];
-        for (const [vcId, botIndex] of botManager.voiceChannelUsage) {
-          if (botIndex === currentBotIndex) {
-            currentBotVoiceChannels.push(vcId);
-          }
-        }
+      if (!shouldHandle) {
+        // Find the best bot for this voice channel
+        const bestBotId = botCoordinator.findBestBotForVoiceChannel(voiceChannel.id);
         
-        // If this bot is already in a different voice channel, stop it first
-        if (currentBotVoiceChannels.length > 0 && !currentBotVoiceChannels.includes(voiceChannelId)) {
-          console.log(`🔄 Bot ${client.user.username} switching from ${currentBotVoiceChannels[0]} to ${voiceChannelId}`);
+        if (bestBotId && bestBotId !== currentBotId) {
+          console.log(`🚫 Bot ${currentBotId} (${interaction.client.user.username}) cannot handle play command - Bot ${bestBotId} should handle voice channel ${voiceChannel.id}`);
           
-          // Stop the current queue
-          const distubePlayer = client.distubePlayer;
-          if (distubePlayer) {
-            const currentQueue = distubePlayer.getQueue(guildId);
-            if (currentQueue) {
-              currentQueue.stop();
-            }
-          }
-          
-          // Remove from old voice channel tracking
-          for (const vcId of currentBotVoiceChannels) {
-            botManager.voiceChannelUsage.delete(vcId);
-          }
-        }
+          // Send initial response
+          await interaction.reply({
+            embeds: [
+              {
+                color: 0x00ff00,
+                title: "🔄 Bot Coordination",
+                description: `Bot ${bestBotId} will join and play music in this voice channel...`,
+              },
+            ],
+            flags: 64,
+          });
 
-        // Assign this bot to the voice channel
-        botManager.voiceChannelUsage.set(voiceChannelId, currentBotIndex);
-        console.log(`🤖 Bot ${client.user.username} assigned to voice channel ${voiceChannelId}`);
+          // Actually make the correct bot join and play
+          const query = interaction.options.getString("query");
+          const success = await botCoordinator.makeBotJoinAndPlay(bestBotId, interaction, query);
+          
+          if (success) {
+            // Update the response to show success
+            await interaction.editReply({
+              embeds: [
+                {
+                  color: 0x00ff00,
+                  title: "✅ Bot Coordination",
+                  description: `Bot ${bestBotId} has joined and is playing music!`,
+                },
+              ],
+              flags: 64,
+            });
+          } else {
+            // Update the response to show failure
+            await interaction.editReply({
+              embeds: [
+                {
+                  color: 0xff0000,
+                  title: "❌ Bot Coordination Failed",
+                  description: `Failed to make Bot ${bestBotId} join and play. Please try again.`,
+                },
+              ],
+              flags: 64,
+            });
+          }
+          
+          return;
+        } else if (!bestBotId) {
+          return interaction.reply({
+            embeds: [
+              {
+                color: 0xff6b35,
+                title: "❌ No Available Bot",
+                description: `All bots are currently busy. Please wait for a bot to become available.`,
+              },
+            ],
+            flags: 64,
+          });
+        }
       }
 
       // Use the current bot's DisTube player
-      const distubePlayer = client.distubePlayer;
+      const distubePlayer = interaction.client.distubePlayer;
       
       if (!distubePlayer) {
         return interaction.reply({
@@ -86,6 +117,11 @@ export default {
       }
 
       const query = interaction.options.getString("query");
+      
+      console.log(`🎵 Bot ${currentBotId} (${interaction.client.user.username}) handling play command for voice channel ${voiceChannel.id}`);
+      
+      // Update bot state to show it's handling this voice channel
+      botCoordinator.updateBotState(currentBotId, voiceChannel.id);
       
       // Use DisTube to play the song
       await distubePlayer.play(interaction, query);
@@ -105,5 +141,5 @@ export default {
         await interaction.reply({ embeds: [errorEmbed], flags: 64 });
       }
     }
-  },
+  }
 };
