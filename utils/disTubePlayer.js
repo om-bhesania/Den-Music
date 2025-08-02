@@ -15,9 +15,6 @@ class DisTubePlayer {
       emitAddListWhenCreatingQueue: false,
       nsfw: true,
       joinNewVoiceChannel: true,
-      leaveOnStop: false,
-      leaveOnFinish: false,
-      leaveOnEmpty: false,
       plugins: [
         new SpotifyPlugin(),
         new SoundCloudPlugin(),
